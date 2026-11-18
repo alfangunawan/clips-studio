@@ -639,6 +639,8 @@ export interface AIProvider {
   key_url: string
   pricing_url: string
   privacy: string
+  /** False for a provider that only transcribes (AssemblyAI). */
+  text?: boolean
   stt: boolean
   stt_models?: string[]
   /** The model the card puts first for each job: the cheapest that does it

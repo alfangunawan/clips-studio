@@ -127,7 +127,8 @@ function JobChoice({
   run: Run
   onOpenModels?: () => void
 }): JSX.Element {
-  const usable = status.providers.filter((p) => !p.local && (job === 'ai' || p.stt))
+  // A transcription-only provider (AssemblyAI) is never offered for picking clips.
+  const usable = status.providers.filter((p) => !p.local && (job === 'ai' ? p.text !== false : p.stt))
   const recommended = usable.filter((p) => p.tier === 2)
   const direct = usable.filter((p) => p.tier === 3)
   const activeId = job === 'ai' ? status.active.provider : status.transcription.backend

@@ -38,6 +38,8 @@ def auth_headers(spec: ProviderSpec, key: str) -> dict:
         return {"x-api-key": key}
     if spec.auth == "x-goog-api-key":
         return {"x-goog-api-key": key}
+    if spec.auth == "raw":
+        return {"Authorization": key}  # AssemblyAI: the key itself, no "Bearer"
     return {"Authorization": f"Bearer {key}"}
 
 
@@ -50,10 +52,15 @@ def send(
     json_body: dict | None = None,
     params: dict | None = None,
     files: dict | None = None,
-    data: dict | None = None,
+    data: dict | bytes | None = None,
     timeout: float = TIMEOUT,
+    error_in_body_is_failure: bool = True,
 ) -> dict:
-    """Make one request (with bounded retries) and return the JSON body."""
+    """Make one request (with bounded retries) and return the JSON body.
+
+    error_in_body_is_failure=False: a 2xx answer carrying an "error" field is
+    returned as it is, for an API that reports a job's own failure that way
+    (AssemblyAI's transcript status), rather than retried as a provider fault."""
     url = spec.base_url.rstrip("/") + path
     headers = {**auth_headers(spec, key), **spec.extra_headers()}
     error: LLMError | None = None
@@ -73,7 +80,7 @@ def send(
         else:
             body = _body(response)
             status = response.status_code
-            if status < 300 and not _error_in(body):
+            if status < 300 and (not error_in_body_is_failure or not _error_in(body)):
                 return body if isinstance(body, dict) else {"data": body}
             if status < 300:
                 # OpenRouter can answer 200 with only an error object once a

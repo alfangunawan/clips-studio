@@ -83,7 +83,8 @@ def test_local_then_openrouter_then_direct_providers(env):
     assert (providers[0]["id"], providers[0]["tier"]) == ("ollama", 1)
     assert (providers[1]["id"], providers[1]["tier"], providers[1]["recommended"]) == ("openrouter", 2, True)
     direct = [p["id"] for p in providers if p["tier"] == 3]
-    assert direct == ["openai", "anthropic", "gemini", "xai", "meta", "deepseek", "qwen"]  # all still offered
+    assert direct == ["openai", "anthropic", "gemini", "xai", "meta", "deepseek", "qwen",
+                      "assemblyai"]  # all still offered; AssemblyAI only for transcription
 
 
 def test_no_route_can_change_the_openrouter_attribution(env):
@@ -161,6 +162,36 @@ def test_transcription_is_local_until_a_keyed_provider_is_chosen(env):
     env.client.post("/ai/transcription", json={"backend": "local"})
     assert env.config["transcription"] == {"backend": "local", "model": ""}
     assert env.settings.read_text(encoding="utf-8").count("transcription:") == 1  # replaced, not repeated
+
+
+def test_assemblyai_transcribes_but_never_picks_clips(env, monkeypatch):
+    aai_key = "aai0" + "c0ffee12" * 4
+    seen = []
+
+    def transport(method, url, **kw):
+        seen.append((method, url, kw["headers"].get("Authorization")))
+        if url.startswith("https://api.assemblyai.com/v2/transcript"):
+            return Response(200, {"transcripts": []})
+        raise AssertionError(url)
+
+    monkeypatch.setattr(http, "transport", transport)
+    listed = {p["id"]: p for p in env.client.get("/ai").json()["providers"]}
+    assert listed["assemblyai"]["stt"] is True and listed["assemblyai"]["text"] is False
+    assert listed["openrouter"]["text"] is True
+
+    # The key is checked against AssemblyAI before it is kept, sent bare.
+    saved = env.client.put("/ai/providers/assemblyai/key", json={"api_key": aai_key})
+    assert saved.status_code == 200 and keys.has_key(env.data, "assemblyai")
+    assert seen and seen[0][2] == aai_key
+
+    assert env.client.post("/ai/activate", json={"provider": "assemblyai", "model": "universal-2"}).status_code == 400
+    assert env.client.get("/ai/providers/assemblyai/models").status_code == 400            # no text models
+    assert env.config["llm"]["backend"] == "ollama/gemma:7b"
+
+    chosen = env.client.post("/ai/transcription", json={"backend": "assemblyai"}).json()["transcription"]
+    assert chosen == {"backend": "assemblyai", "model": "universal-2"}
+    voices = env.client.get("/ai/providers/assemblyai/models", params={"kind": "stt"}).json()["models"]
+    assert [m["id"] for m in voices][0] == "universal-2"
 
 
 def test_removing_a_key_forgets_it(env):

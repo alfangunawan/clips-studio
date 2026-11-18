@@ -94,7 +94,7 @@ class ProviderSpec:
     key_url: str        # where the user gets their own key
     pricing_url: str    # the provider's own pricing: what the user will pay
     privacy: str        # what leaves the PC, said plainly
-    auth: str = "bearer"            # bearer | x-api-key | x-goog-api-key
+    auth: str = "bearer"            # bearer | raw | x-api-key | x-goog-api-key
     extra_headers: Callable[[], dict] = _no_headers
     body_extras: Callable[[dict], dict] = _keep
     models_path: str = "/models"
@@ -102,6 +102,9 @@ class ProviderSpec:
     key_check_path: str = ""        # a cheap GET proving the key; "" lists models
     key_check_ok: Callable[[dict], bool] = _accept  # for a check that answers 200 about a dead key
     stt: dict = field(default_factory=dict)  # online transcription, when offered
+    # False for a provider that only transcribes (AssemblyAI): it is never
+    # offered for picking clips, and has no text models to list.
+    text: bool = True
     # Reads one entry of the provider's live speech catalogue (stt["catalog"]).
     stt_filter: Callable[[dict], ModelInfo | None] | None = None
     # Where it sits in the choice. Local (Ollama and Whisper) is tier 1 and not
@@ -151,6 +154,7 @@ class ProviderSpec:
             "key_url": self.key_url,
             "pricing_url": self.pricing_url,
             "privacy": self.privacy,
+            "text": self.text,
             "stt": bool(self.stt),
             "stt_models": list(self.stt.get("models") or []),
             "plan_note": self.plan_note,

@@ -52,10 +52,17 @@ whisper:
 
 # Where transcription runs. "local" is Whisper on this PC (the settings above),
 # the default. Or send the audio, on YOUR OWN API key, to a provider that
-# returns word timings: openai / openrouter / xai. Set it in Settings → AI.
+# returns word timings: openai / openrouter / xai / assemblyai. Set it in
+# Settings → AI.
 transcription:
   backend: local
   model: ""
+
+# Names and slang AssemblyAI is told to listen for (its "keyterms"): the
+# streamer's and characters' names first. Up to 200 with universal-2, at most
+# 6 words each. Ignored by every other backend. Example list:
+# config/keyterms-gta-id.example.txt
+transcription_keyterms: []
 
 clips:
   min_score: 55         # discard candidates scored below this (0-100).

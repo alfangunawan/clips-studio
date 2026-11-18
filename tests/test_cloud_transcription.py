@@ -225,3 +225,140 @@ def test_local_stays_local_and_online_goes_online(monkeypatch, tmp_path):
     monkeypatch.setattr(cloud, "transcribe", lambda *a, **k: sent.append(a) or [])
     transcriber.transcribe(tmp_path / "v.mp4", "x", tmp_path / "t", online=online)
     assert len(sent) == 1
+
+
+# ---- AssemblyAI: upload, submit, wait, read, delete ------------------------------
+
+
+AAI_KEY = "aai0" + "c0ffee12" * 4
+
+
+class AssemblyAI:
+    """A faked AssemblyAI: one upload, one transcript that is processing on
+    the first look and completed on the second, then deleted."""
+
+    def __init__(self, words=None, status="completed", language="id"):
+        self.calls = []
+        self.looks = 0
+        self.words = words if words is not None else [
+            {"text": "Anjir,", "start": 500, "end": 900, "confidence": 0.9},
+            {"text": "gokil", "start": 900, "end": 1300, "confidence": 0.9},
+            {"text": "banget!", "start": 1300, "end": 1800, "confidence": 0.9},
+        ]
+        self.status = status
+        self.language = language
+        self.forever = False
+
+    def __call__(self, method, url, **kw):
+        self.calls.append({"method": method, "url": url, **kw})
+        if url.endswith("/v2/upload"):
+            return Response({"upload_url": "https://cdn.assemblyai.com/upload/abc"})
+        if method == "POST" and url.endswith("/v2/transcript"):
+            return Response({"id": "tr-1", "status": "queued"})
+        if method == "GET" and url.endswith("/v2/transcript/tr-1"):
+            self.looks += 1
+            if self.looks == 1 or self.forever:
+                return Response({"id": "tr-1", "status": "processing"})
+            if self.status == "error":
+                return Response({"id": "tr-1", "status": "error", "error": "Audio file could not be decoded"})
+            return Response({"id": "tr-1", "status": "completed", "language_code": self.language,
+                             "words": self.words})
+        if method == "DELETE" and url.endswith("/v2/transcript/tr-1"):
+            return Response({"id": "tr-1", "status": "completed"})
+        raise AssertionError(f"{method} {url}")
+
+
+def test_assemblyai_is_a_transcription_only_provider():
+    from llm.providers.catalog import get
+
+    spec = get("assemblyai")
+    assert spec is not None and spec.stt and spec.stt["format"] == "assemblyai"
+    assert spec.text is False                        # never offered for picking clips
+    assert spec.stt["models"][0] == "universal-2"    # the one that knows Indonesian
+    assert spec.public()["text"] is False and spec.public()["stt"] is True
+
+
+def test_assemblyai_uploads_waits_and_comes_back_like_a_local_transcript(audio, monkeypatch, tmp_path):
+    keys.save_key(tmp_path, "assemblyai", AAI_KEY)
+    monkeypatch.setattr(cloud, "_duration", lambda path: 60.0)   # one part
+    fake = AssemblyAI()
+    monkeypatch.setattr(http, "transport", fake)
+    waits = []
+    monkeypatch.setattr(cloud, "_wait", lambda s: waits.append(s))
+    online = {"backend": "assemblyai", "model": "universal-2", "data_dir": str(tmp_path),
+              "keyterms": ["Bang Windah", "Los Santos", "  ", "satu dua tiga empat lima enam tujuh"]}
+
+    segments = cloud.transcribe(tmp_path / "v.mp4", "vidaai0001", tmp_path / "t", online, language="id")
+
+    upload, submit, first, second, delete = fake.calls
+    assert upload["data"] == b"mp3"
+    # The key goes as AssemblyAI wants it, bare, and only in the header.
+    assert all(c["headers"]["Authorization"] == AAI_KEY for c in fake.calls)
+    assert AAI_KEY not in json.dumps(submit["json"])
+    body = submit["json"]
+    assert body["audio_url"] == "https://cdn.assemblyai.com/upload/abc"
+    assert body["speech_models"] == ["universal-2"]
+    assert body["language_code"] == "id" and "language_detection" not in body
+    # Blank terms and phrases over six words are left out rather than refused.
+    assert body["keyterms_prompt"] == ["Bang Windah", "Los Santos"]
+    assert waits                                   # it waited between looks
+    assert delete["method"] == "DELETE"            # nothing is left on AssemblyAI
+
+    words = [w for s in segments for w in s.words]
+    assert words == [{"start": 0.5, "end": 0.9, "word": "Anjir,"}, {"start": 0.9, "end": 1.3, "word": "gokil"},
+                     {"start": 1.3, "end": 1.8, "word": "banget!"}]
+    saved = json.loads((tmp_path / "t" / "vidaai0001.json").read_text(encoding="utf-8"))
+    assert saved["language"] == "id" and saved["source"] == "assemblyai/universal-2"
+
+
+def test_assemblyai_detects_the_language_when_none_is_set(audio, monkeypatch, tmp_path):
+    keys.save_key(tmp_path, "assemblyai", AAI_KEY)
+    monkeypatch.setattr(cloud, "_duration", lambda path: 60.0)
+    fake = AssemblyAI(language="id")
+    monkeypatch.setattr(http, "transport", fake)
+    monkeypatch.setattr(cloud, "_wait", lambda s: None)
+
+    cloud.transcribe(tmp_path / "v.mp4", "vidaai0002", tmp_path / "t",
+                     {"backend": "assemblyai", "data_dir": str(tmp_path)})
+
+    body = fake.calls[1]["json"]
+    assert body["language_detection"] is True and "language_code" not in body
+    assert "keyterms_prompt" not in body
+    saved = json.loads((tmp_path / "t" / "vidaai0002.json").read_text(encoding="utf-8"))
+    assert saved["language"] == "id"
+
+
+def test_assemblyai_failing_a_part_fails_the_job_in_plain_words(audio, monkeypatch, tmp_path):
+    keys.save_key(tmp_path, "assemblyai", AAI_KEY)
+    monkeypatch.setattr(cloud, "_duration", lambda path: 60.0)
+    monkeypatch.setattr(http, "transport", AssemblyAI(status="error"))
+    monkeypatch.setattr(cloud, "_wait", lambda s: None)
+
+    with pytest.raises(LLMError) as err:
+        cloud.transcribe(tmp_path / "v.mp4", "vidaai0003", tmp_path / "t",
+                         {"backend": "assemblyai", "data_dir": str(tmp_path)})
+    assert "could not be decoded" in err.value.message
+
+
+def test_assemblyai_that_never_finishes_is_given_up_on(audio, monkeypatch, tmp_path):
+    keys.save_key(tmp_path, "assemblyai", AAI_KEY)
+    monkeypatch.setattr(cloud, "_duration", lambda path: 60.0)
+    fake = AssemblyAI()
+    fake.forever = True                               # processing, forever
+    monkeypatch.setattr(http, "transport", fake)
+    monkeypatch.setattr(cloud, "_wait", lambda s: None)
+
+    with pytest.raises(LLMError) as err:
+        cloud.transcribe(tmp_path / "v.mp4", "vidaai0004", tmp_path / "t",
+                         {"backend": "assemblyai", "data_dir": str(tmp_path)})
+    assert err.value.kind == "provider_down"
+
+
+def test_keyterms_ride_along_only_when_set(tmp_path):
+    pytest.importorskip("numpy", reason="core.pipeline imports numpy, which CI does not install")
+    from core.pipeline import online_transcription
+
+    config = {"paths": {"data_dir": str(tmp_path)}, "transcription": {"backend": "assemblyai", "model": ""}}
+    assert "keyterms" not in online_transcription(config)
+    online = online_transcription({**config, "transcription_keyterms": ["Los Santos"]})
+    assert online["keyterms"] == ["Los Santos"]

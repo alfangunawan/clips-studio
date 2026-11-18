@@ -1,0 +1,23 @@
+# Names and slang for AssemblyAI to listen for (keyterms), one per line.
+# Add the streamer's name, their friends' and characters' names first: those
+# are what transcription gets wrong most. At most 6 words a line; up to 200
+# lines are used with universal-2.
+#
+# Use with: python scripts/assemblyai_pretranscribe.py <link> --keyterms this-file.txt
+# or list them under transcription_keyterms: in settings.yaml.
+
+GTA 6
+Grand Theft Auto
+Leonida
+Vice City
+Lucia
+Jason
+Los Santos
+
+anjir
+bjir
+gokil
+gacor
+buset
+mantap
+wkwk

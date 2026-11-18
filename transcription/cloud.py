@@ -31,6 +31,7 @@ import json
 import re
 import subprocess
 import tempfile
+import time
 from pathlib import Path
 
 from core import cancel, progress
@@ -50,6 +51,12 @@ SPEECH_PAD = 0.2       # a word counts as spoken this close to detected speech
 PAUSE = 0.6            # a gap this long between words starts a new segment
 MAX_SEGMENT = 15.0     # and no segment runs longer than this
 STT_TIMEOUT = 300
+# AssemblyAI transcribes in the background: the transcript is asked for again
+# every POLL_SECONDS until it is done, for at most POLL_LIMIT seconds a part.
+POLL_SECONDS = 3.0
+POLL_LIMIT = 30 * 60
+KEYTERMS_MAX = 200         # Universal-2's limit; the newer model takes more
+KEYTERM_WORDS = 6          # words in one term, AssemblyAI's limit
 _SENTENCE_END = re.compile(r"[.!?…。！？]['\")\]]*$")
 
 
@@ -82,7 +89,8 @@ def transcribe(video_path: Path, video_id: str, transcript_dir: Path, online: di
             if speech == []:
                 silent += 1
                 continue
-            part_words, part_language = _request(spec, key, model, audio, language)
+            part_words, part_language = _request(spec, key, model, audio, language,
+                                                 keyterms=online.get("keyterms"))
             if speech is not None:
                 kept = [w for w in part_words if _spoken(w, speech)]
                 made_up += len(part_words) - len(kept)
@@ -157,9 +165,12 @@ def _spoken(word: dict, speech: list[tuple[float, float]]) -> bool:
 # ---- one request per provider format -------------------------------------------
 
 
-def _request(spec, key: str, model: str, audio: Path, language: str | None) -> tuple[list[dict], str]:
+def _request(spec, key: str, model: str, audio: Path, language: str | None,
+             keyterms: list | None = None) -> tuple[list[dict], str]:
     fmt = spec.stt["format"]
     data = audio.read_bytes()
+    if fmt == "assemblyai":
+        return _assemblyai(spec, key, model, data, language, keyterms)
     if fmt == "openrouter":
         body = {"model": model, "response_format": "verbose_json",
                 "timestamp_granularities": ["segment", "word"],
@@ -186,6 +197,66 @@ def _request(spec, key: str, model: str, audio: Path, language: str | None) -> t
                  for w in answer.get("words") or [] if isinstance(w, dict) and str(w.get("text") or "").strip()]
         return words, str(answer.get("language") or "")
     raise LLMError("not_configured", f"{spec.label} transcription is not set up in this version.")
+
+
+def _wait(seconds: float) -> None:
+    time.sleep(seconds)   # replaced in tests
+
+
+def _keyterms(terms) -> list[str]:
+    """The terms AssemblyAI accepts: blank ones and ones longer than six words
+    are left out rather than failing the job, up to its limit."""
+    kept = [" ".join(str(t).split()) for t in terms or []]
+    kept = [t for t in kept if t and len(t.split()) <= KEYTERM_WORDS]
+    return list(dict.fromkeys(kept))[:KEYTERMS_MAX]
+
+
+def _assemblyai(spec, key: str, model: str, data: bytes, language: str | None,
+                keyterms: list | None) -> tuple[list[dict], str]:
+    """Upload the part, ask for its transcript, wait for it, read its words,
+    then delete it there. Times come back in milliseconds."""
+    upload = send(spec, key, "POST", "/v2/upload", data=data, timeout=STT_TIMEOUT)
+    audio_url = str(upload.get("upload_url") or "")
+    if not audio_url:
+        raise LLMError("bad_response", f"{spec.label} didn't accept the audio upload. Try again.")
+    body: dict = {"audio_url": audio_url, "speech_models": [model], "punctuate": True, "format_text": True}
+    if language:
+        body["language_code"] = language
+    else:
+        body["language_detection"] = True
+    terms = _keyterms(keyterms)
+    if terms:
+        body["keyterms_prompt"] = terms
+    job = send(spec, key, "POST", "/v2/transcript", json_body=body)
+    job_id = str(job.get("id") or "")
+    if not job_id:
+        raise LLMError("bad_response", f"{spec.label} didn't start the transcription. Try again.")
+
+    waited = 0.0
+    while True:
+        cancel.check_active()
+        answer = send(spec, key, "GET", f"/v2/transcript/{job_id}", error_in_body_is_failure=False)
+        status = str(answer.get("status") or "")
+        if status == "completed":
+            break
+        if status == "error":
+            raise LLMError("rejected", f"{spec.label} couldn't transcribe this part. "
+                                       f"It said: {str(answer.get('error') or 'no reason given')[:240]}")
+        if waited >= POLL_LIMIT:
+            raise LLMError("provider_down", f"{spec.label} hadn't finished a part after "
+                                            f"{POLL_LIMIT // 60} minutes. Try again later.")
+        _wait(POLL_SECONDS)
+        waited += POLL_SECONDS
+
+    words = [{"start": float(w["start"]) / 1000, "end": float(w["end"]) / 1000,
+              "word": str(w.get("text") or "").strip()}
+             for w in answer.get("words") or []
+             if isinstance(w, dict) and str(w.get("text") or "").strip()]
+    try:
+        send(spec, key, "DELETE", f"/v2/transcript/{job_id}")
+    except LLMError:
+        pass  # the words are already here; a transcript left behind is not worth failing for
+    return words, str(answer.get("language_code") or "")
 
 
 def _whisper_words(answer: dict) -> list[dict]:

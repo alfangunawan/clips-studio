@@ -128,6 +128,28 @@ QWEN = ProviderSpec(
     tagline="Direct Qwen API, through Alibaba Cloud Model Studio.",
 )
 
+# Transcription only. Universal-2 is first: it covers 99 languages, Indonesian
+# among them, where the newer model's list is shorter. Keys are sent bare in
+# the Authorization header (auth="raw"). Each finished transcript is deleted
+# from AssemblyAI once it is read (transcription/cloud.py).
+ASSEMBLYAI = ProviderSpec(
+    id="assemblyai",
+    label="AssemblyAI",
+    adapter="transcription_only",
+    base_url="https://api.assemblyai.com",
+    key_label="AssemblyAI API key",
+    key_url="https://www.assemblyai.com/dashboard/api-keys",
+    pricing_url="https://www.assemblyai.com/pricing",
+    privacy="Audio is sent to AssemblyAI with your key, and each transcript is deleted there once "
+            "it is read.",
+    auth="raw",
+    key_check_path="/v2/transcript?limit=1",
+    stt={"format": "assemblyai", "models": ["universal-2", "assemblyai-stt-3-7"], "chunk_seconds": 1800},
+    text=False,
+    preferred={"stt": "universal-2"},
+    tagline="Transcription only. Strong in Indonesian and 99 languages; names and slang can be listed.",
+)
+
 # OpenRouter first: the recommended cloud path (tier 2). The direct provider
 # APIs follow (tier 3), always available, offered as the advanced option.
 _ORDER: tuple[ProviderSpec, ...] = (
@@ -139,6 +161,7 @@ _ORDER: tuple[ProviderSpec, ...] = (
     META,
     DEEPSEEK,
     QWEN,
+    ASSEMBLYAI,
 )
 
 PROVIDERS: dict[str, ProviderSpec] = {spec.id: spec for spec in _ORDER}

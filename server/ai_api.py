@@ -304,6 +304,8 @@ def install(app, *, config, db, data_dir, settings_path) -> None:
             raise HTTPException(400, "kind is text or stt")
         if kind == "stt" and not spec.stt:
             raise HTTPException(400, f"{spec.label} doesn't transcribe here.")
+        if kind == "text" and not spec.text:
+            raise HTTPException(400, f"{spec.label} only transcribes; it has no models for picking clips.")
         try:
             fetched_at, models = _models(*_keyed(spec), refresh, kind)
         except LLMError as e:
@@ -353,6 +355,9 @@ def install(app, *, config, db, data_dir, settings_path) -> None:
                 spec_text = switch_model(settings_path, f"{plan.id}/{model}")
             else:
                 spec = _spec(provider)
+                if not spec.text:
+                    raise HTTPException(400, f"{spec.label} only transcribes. Choose it under "
+                                             "Transcription, and another provider for picking clips.")
                 if not model:
                     raise HTTPException(400, f"Choose a {spec.label} model.")
                 if not keys.has_key(data_path, spec.id):

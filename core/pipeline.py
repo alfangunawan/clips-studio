@@ -116,7 +116,14 @@ def online_transcription(config: dict) -> dict | None:
     settings = config.get("transcription") or {}
     if str(settings.get("backend") or "local") == "local":
         return None
-    return {**settings, "data_dir": config["paths"]["data_dir"]}
+    online = {**settings, "data_dir": config["paths"]["data_dir"]}
+    # Names and slang the provider is told to listen for (AssemblyAI's
+    # keyterms). Top-level in settings.yaml, so choosing a provider in
+    # Settings → AI, which rewrites the `transcription:` block, keeps them.
+    terms = [str(t) for t in config.get("transcription_keyterms") or [] if str(t).strip()]
+    if terms:
+        online["keyterms"] = terms
+    return online
 
 
 def clip_direction(config: dict, llm, duration: float):
