@@ -166,6 +166,38 @@ def test_words_count_only_as_written():
     assert classify("hello there", m) == {}
 
 
+@pytest.mark.parametrize("text, kind", [
+    ("wkwkwk", "funny"), ("WKWKWKWK", "funny"), ("wkwkkwkw", "funny"), ("awokawok", "funny"),
+    ("awokwokwok", "funny"), ("ngakak", "funny"), ("kocak bang", "funny"), ("xixixi", "funny"),
+    ("GOKIIIL", "hype"), ("mantap bang", "hype"), ("mantab", "hype"), ("gilaaa", "hype"),
+    ("sadis", "hype"), ("gacor", "hype"), ("keren", "hype"), ("luar biasa", "hype"),
+    ("anjir", "surprise"), ("ANJIRRR", "surprise"), ("bjir", "surprise"), ("njir", "surprise"),
+    ("anjay", "surprise"), ("buset", "surprise"), ("wadidaw", "surprise"), ("hah?", "surprise"),
+    ("demi apa", "surprise"), ("kok bisa", "surprise"),
+    ("serem", "scare"), ("kaget gw", "scare"), ("merinding", "scare"),
+    ("yahhh", "fail"), ("kasian", "fail"), ("cupu", "fail"), ("waduh", "fail"),
+    ("klip", "clip"), ("clipin dong", "clip"),
+])
+def test_indonesian_chat_reacts_in_its_own_words(text, kind):
+    pytest.importorskip("numpy")
+    from analysis.chat_moments import _matchers, classify
+
+    m = _matchers(gaming.knowledge()["chat_classes"])
+    assert kind in classify(text, m)
+
+
+def test_indonesian_sentences_and_hellos_are_not_reactions():
+    pytest.importorskip("numpy")
+    from analysis.chat_moments import _matchers, _only, classify
+
+    m = _matchers(gaming.knowledge()["chat_classes"])
+    for text in ("wk", "bang mau tanya", "kapan main lagi", "halo semua", "yang tadi gimana"):
+        assert classify(text, m) == {}, text
+    ignore = {str(w).lower() for w in gaming.knowledge()["chat_ignore"]}
+    assert _only("halo bang", ignore) and _only("semangat kak", ignore)
+    assert not _only("gokil bang", ignore)
+
+
 # ---- the fused score --------------------------------------------------------------------
 
 

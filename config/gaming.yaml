@@ -21,6 +21,9 @@ chat_lag_seconds: 6
 # - patterns: regular expressions tried on each word, ignoring case (laughter
 #   typed as ｗｗｗ, ㅋㅋㅋ, jajaja, kkkk, 哈哈).
 # - message_patterns: the same, on the whole message (a lone "あ" or "what?!").
+#
+# Indonesian chat stretches its words ("gokiiil", "anjirrr", "wkwkwkwk"), so it
+# is matched with patterns (repeated letters allowed) rather than exact words.
 chat_classes:
   hype:
     label: hype
@@ -28,10 +31,13 @@ chat_classes:
             LETSGOOO, INSANE, insane, HOW, HOLY, CLUTCH, clutch, W, WW, GIGACHAD, EZ, Clap,
             GG, gg, Kreygasm, SeemsGood, CurseLit, PopNemo, WOW, wow, OMG, omg, "no way",
             "let's go", "lets go", "what a", "holy shit", "oh my god", "すご", "すげ", "神",
-            "대박", "牛逼", "太强", "brutal", "increible", "incrível", "🔥", "😱", "🤯", "🐐", "👏",
-            "💪", "🏆"]
+            "대박", "牛逼", "太强", "brutal", "increible", "incrível", "luar biasa", "🔥", "😱",
+            "🤯", "🐐", "👏", "💪", "🏆"]
     suffixes: [Pog, POG, Hype, HYPE, Clap, GG, Win, WIN, W, Cheer, Fire, Goat, GOAT, Wow, WOW]
-    patterns: ["^6{3,}$", "^(gg)+$"]
+    patterns: ["^6{3,}$", "^(gg)+$",
+               # Indonesian: gokil, mantap/mantab, mantul, gila/gilak, sadis, gacor, keren, edan, jago
+               "^go+ki+l+$", "^ma+n+ta+[pb]+$", "^ma+ntu+l+$", "^gi+la+k*$", "^sa+di+s+$",
+               "^ga+co+r+$", "^ke+re+n+$", "^e+da+n+$", "^ja+go+$"]
   funny:
     label: laughing
     words: [LUL, LULW, KEKW, OMEGALUL, ICANT, KEK, LOL, lol, LMAO, lmao, LMFAO, lmfao, xD, XD,
@@ -39,34 +45,50 @@ chat_classes:
             "💀", "草"]
     suffixes: [LUL, LOL, KEKW, KEK, Laugh, LAUGH, Lmao, LMAO, Lol, Haha, HAHA]
     patterns: ["^[wｗ]{2,}$", "ㅋ{2,}", "^(ja){2,}j?a?$", "^(ha){2,}h?$", "^k{4,}$", "^x+d+$",
-               "哈哈", "^(lo)+l$", "^(ah){2,}$", "хаха", "^(he){3,}$"]
+               "哈哈", "^(lo)+l$", "^(ah){2,}$", "хаха", "^(he){3,}$",
+               # Indonesian: wkwkwk (typed sloppily too), awokawok, ngakak, kocak, xixixi
+               "^(?=[wk]{4,}$)[wk]*(wk|kw)[wk]*$", "^(a?wo+k){2,}$", "^nga+ka+k+s?$",
+               "^ko+ca+[kg]+$", "^(xi){3,}$"]
   surprise:
     label: surprised
     words: [HUH, WHAT, wtf, WTF, "?!", "!?", "！？", "？！", "は？",
-            "やば", "やばい", "マジ", "헐", "뭐야", "什么", "😮", "😯", "🫢"]
+            "やば", "やばい", "マジ", "헐", "뭐야", "什么", "demi apa", "kok bisa", "😮", "😯", "🫢"]
     suffixes: [Huh, HUH, What, WHAT, Shock, Omg, OMG]
-    message_patterns: ["^[?？!！]{2,}$", "^[あえぁぇ]+[!！?？ー～]*$", "^hu+h+[?!]*$", "^wha+t+[?!]*$"]
+    patterns: [# Indonesian: anjir/njir/bjir, anjay/anjrit/anjim/anjer, buset, wadidaw, seriusan
+               "^(a?n|b)ji+r+$", "^anj(a+y+|r+i+t+|i+m+|e+r+)$", "^bu+se+t+$", "^wa+di+da+w+$",
+               "^se+ri+u+s+a+n+$"]
+    message_patterns: ["^[?？!！]{2,}$", "^[あえぁぇ]+[!！?？ー～]*$", "^hu+h+[?!]*$", "^wha+t+[?!]*$",
+                       "^(ha+h+|lo+h+)[?!？！]*$"]
   scare:
     label: scared
     words: [monkaS, monkaW, monkaGIGA, "D:", WutFace, AAAA, AAAAA, JUMPSCARE, "jump scare",
             "怖", "무서", "😨", "😰", "😳"]
     suffixes: [Scared, Fear, Monka, Spooky, Scream]
-    patterns: ["^a{4,}h*$"]
+    patterns: ["^a{4,}h*$",
+               # Indonesian: serem/seram, takut, kaget, merinding, ngeri
+               "^se+r[ea]+m+$", "^ta+ku+t+$", "^ka+ge+t+$", "^me+ri+ndi+ng+$", "^nge+ri+$"]
   fail:
     label: a fail
     words: [F, L, LL, Sadge, BibleThump, NotLikeThis, BigSad, FeelsBadMan, RIP, rip, NOOO, THREW,
             threw, copium, Copium, "；；", "T_T", "😭", "💔"]
     suffixes: [Sad, SAD, Cry, CRY, Rip, RIP, F, L, Dead]
-    patterns: ["ㅠ{2,}", "ㅜ{2,}", "^no{3,}$"]
+    patterns: ["ㅠ{2,}", "ㅜ{2,}", "^no{3,}$",
+               # Indonesian: yah, kasian/kasihan, cupu, (wa)duh, sedih, noob
+               "^ya+h+$", "^kasi+h?a+n+$", "^cu+pu+$", "^(wa)?du+h+$", "^se+di+h+$", "^no+b+$"]
   clip:
     label: asking to clip it
     words: [CLIP, clip, clipped, clipit, "+2", "clip it", "clip that", "someone clip", "clipping",
             "クリップ", "클립"]
+    # Indonesian: klip, klipin, clipin, klipping
+    patterns: ["^[ck]li+p+(in|ing)?$"]
 
 # Messages that are only these (hellos, good lucks, goodbyes) aren't reactions
 # to anything: a stream's start, a raid arriving, or its end is full of them.
 chat_ignore: [hi, Hi, HI, hii, hiii, hello, Hello, hey, Hey, HEY, HEYY, HEYYY, yo, Yo, sup, gl, GL,
-              glgl, o7, gn, gm, wb, bye, cya, "good luck", "welcome", "hello chat", "hi chat"]
+              glgl, o7, gn, gm, wb, bye, cya, "good luck", "welcome", "hello chat", "hi chat",
+              # Indonesian greetings and the words chat addresses the streamer with
+              halo, hallo, hai, haii, "selamat malam", "met malam", permisi, assalamualaikum,
+              salken, semangat, bang, bro, kak, min, semua]
 
 # ---- genres -----------------------------------------------------------------
 # highlights: what a clip channel for this kind of game would post.
